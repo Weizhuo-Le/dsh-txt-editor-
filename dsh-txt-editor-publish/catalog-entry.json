@@ -1,0 +1,16 @@
+{
+  "name": "dsh-novel-txt-editor",
+  "owner": "<你的 GitHub 用户名>",
+  "url": "https://github.com/<你的 GitHub 用户名>/dsh-novel-txt-editor",
+  "category": "ui",
+  "description": {
+    "en": "Editable plain text in the DSH right sidebar: a .txt file opened in a document tab renders as a textarea with character/line counts, Ctrl+S save, reload, and a version guard that refuses to overwrite a file changed on disk meanwhile. Read and write go through the plugin's own Host routes, limited to registered workspaces, preserving CRLF and BOM.",
+    "zh": "在 DSH 右侧栏直接编辑 .txt：文档标签里的纯文本变成可编辑文本框，带字数/行数、Ctrl+S 保存、重新载入，并用版本号防止覆盖磁盘上已被改动的文件；读写走插件自己的 Host 路由，只允许已登记工作区内的路径，保留 CRLF 与 BOM。"
+  },
+  "npm": null,
+  "version": "2.0.0",
+  "install": "dsh plugin --profile web add github:<你的 GitHub 用户名>/dsh-novel-txt-editor",
+  "added": "<提交 PR 的日期，形如 2026-11-02>",
+  "icon": "https://raw.githubusercontent.com/<你的 GitHub 用户名>/dsh-novel-txt-editor/main/icon.svg",
+  "screenshots": []
+}
