@@ -22,7 +22,6 @@ window.__ModuleLoader__.load({
      */
     const NS = 'novel-txt-editor';
     const BODY_ID = 'dsh-txt-editor/text';
-    const SHIPPED_TEXT_ID = '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/text';
 
     const ZH = {
       'panel.title': '可编辑文本',
@@ -334,58 +333,84 @@ window.__ModuleLoader__.load({
         ctx.effect(registerDictionary('zh', ZH));
         ctx.effect(registerDictionary('en', EN));
 
-        let previews = ctx.get('documentPreviews');
-        if (!previews) {
-          try {
-            previews = ctx.documentPreviews;
-          } catch (error) {
-            previews = undefined;
+        /**
+         * `dsh.client.inject` orders this module after the document-preview
+         * package, so by now it has provided `documentPreviews` and declared
+         * the `sidebar.right.tab.document` slot. Both facts matter:
+         *
+         * - Reading the registry before that package activates yields
+         *   `undefined`, and the old fallback then registered a body under the
+         *   SHIPPED implementation key — an invasive write into a slot whose
+         *   declaration was still being committed.
+         * - `ctx.slots.inject` runs its callback *inside the declaring
+         *   register() call* when the declaration does not exist yet. A throw
+         *   from that callback surfaces as the declaring plugin's activation
+         *   failure, which is exactly how enabling this plugin could take
+         *   `@deepseek-ai/dsh-client-ui-sidebar-documentpreview` — and with it
+         *   the whole web boot — down. Nothing here may throw.
+         */
+        try {
+          function registerDefinition(registry) {
+            if (!registry || typeof registry.register !== 'function') return;
+            ctx.effect(function () {
+              try {
+                return registry.register({
+                  id: BODY_ID,
+                  extensions: ['txt', 'text'],
+                  priority: 'extension',
+                  title: function () {
+                    return T('panel.title');
+                  },
+                  loading: 'text-pages',
+                  wrap: false,
+                });
+              } catch (error) {
+                return function () {};
+              }
+            });
           }
-        }
-        let extensionActive = false;
-        if (previews && typeof previews.register === 'function') {
-          ctx.effect(function () {
+
+          const ready = ctx.get('documentPreviews');
+          if (ready) {
+            registerDefinition(ready);
+          } else {
+            // Activation order is not guaranteed across host versions: if the
+            // preview package is not up yet, register as soon as the service
+            // appears instead of silently doing nothing.
             try {
-              const dispose = previews.register({
-                id: BODY_ID,
-                extensions: ['txt', 'text'],
-                priority: 'extension',
-                title: function () {
-                  return T('panel.title');
-                },
-                loading: 'text-pages',
-                wrap: false,
+              ctx.inject(['documentPreviews'], function (inner) {
+                registerDefinition(inner.get('documentPreviews'));
               });
-              extensionActive = true;
-              return dispose;
             } catch (error) {
-              extensionActive = false;
+              /* no service injection face on this host: stay read-only */
+            }
+          }
+
+          // Registering this plugin's own key is harmless on its own — the body
+          // is only selected once the definition above is in place — and doing
+          // it unconditionally keeps the editor working if the definition lands
+          // a moment later.
+          ctx.slots.inject('sidebar.right.tab.document', function () {
+            try {
+              return ctx.slots.register(
+                {
+                  name: 'sidebar.right.tab.document',
+                  key: BODY_ID,
+                  locale: NS,
+                },
+                TextEditorBody,
+              );
+            } catch (error) {
               return function () {};
             }
           });
+        } catch (error) {
+          /*
+           * One entry that fails to activate aborts the entire web boot, so this
+           * entry must never throw for an environment reason. Worst case the
+           * editor is simply absent and .txt keeps the shipped preview.
+           */
         }
-
-        ctx.slots.inject('sidebar.right.tab.document', function () {
-          const own = ctx.slots.register(
-            {
-              name: 'sidebar.right.tab.document',
-              key: BODY_ID,
-              locale: NS,
-            },
-            TextEditorBody,
-          );
-          if (extensionActive) return own;
-          // No extension point: take over the plain-text fallback body so .txt stays editable.
-          const fallback = ctx.slots.register(
-            {
-              name: 'sidebar.right.tab.document',
-              key: SHIPPED_TEXT_ID,
-              locale: NS,
-            },
-            TextEditorBody,
-          );
-          return [own, fallback];
-        });
       },
     };
   },
