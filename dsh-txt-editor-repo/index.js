@@ -321,36 +321,33 @@ export function apply(ctx) {
     };
   }
 
-  ctx.effect(function () {
-    return server.register({
-      kind: 'exact',
-      path: '/novel-txt/list',
-      handler: route('/novel-txt/list', function (req, url) {
-        if (req.method !== 'GET') throw fail(405, 'METHOD', 'GET required');
-        return listFiles(url);
-      }),
-    });
-  });
+  /**
+   * A throw from an activation hook can take the whole boot down with it, and
+   * the only way this registration throws is a duplicate path — i.e. a second
+   * copy of the plugin. Losing the routes is acceptable; losing the host is not.
+   */
+  function mount(path, handler) {
+    try {
+      ctx.effect(function () {
+        return server.register({ kind: 'exact', path, handler });
+      });
+    } catch (error) {
+      /* another copy already serves this path: stay silent, /novel-txt/* keeps working */
+    }
+  }
 
-  ctx.effect(function () {
-    return server.register({
-      kind: 'exact',
-      path: '/novel-txt/read',
-      handler: route('/novel-txt/read', function (req, url) {
-        if (req.method !== 'GET') throw fail(405, 'METHOD', 'GET required');
-        return readFile(url);
-      }),
-    });
-  });
+  mount('/novel-txt/list', route('/novel-txt/list', function (req, url) {
+    if (req.method !== 'GET') throw fail(405, 'METHOD', 'GET required');
+    return listFiles(url);
+  }));
 
-  ctx.effect(function () {
-    return server.register({
-      kind: 'exact',
-      path: '/novel-txt/save',
-      handler: route('/novel-txt/save', function (req) {
-        if (req.method !== 'POST') throw fail(405, 'METHOD', 'POST required');
-        return saveFile(req);
-      }),
-    });
-  });
+  mount('/novel-txt/read', route('/novel-txt/read', function (req, url) {
+    if (req.method !== 'GET') throw fail(405, 'METHOD', 'GET required');
+    return readFile(url);
+  }));
+
+  mount('/novel-txt/save', route('/novel-txt/save', function (req) {
+    if (req.method !== 'POST') throw fail(405, 'METHOD', 'POST required');
+    return saveFile(req);
+  }));
 }

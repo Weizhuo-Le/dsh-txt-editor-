@@ -22,10 +22,12 @@ The desktop app can do the same from **Settings → Plugins** (add from GitHub).
 Open any `.txt` file the way you already do — a deliverable card, the right sidebar's file tree, or a file link in the conversation. Instead of the read-only preview you get an editor:
 
 - character and line count, dirty indicator, last-saved time
+- **line-number gutter** on the left: one number per logical line (`\n`), so a wrapped paragraph keeps a single number at its first row; it follows scrolling and never re-lays out the text
 - `Ctrl+S` (or `⌘S`) saves; the Save button is disabled when nothing changed
 - **Reload** re-reads from disk, and asks first when there are unsaved edits
 - honours the document toolbar's wrap toggle
 - the toolbar's viewer dropdown lists it as **Editable text**, so the shipped read-only rendering is always one click away
+- one scrollbar only: the body reports the textarea through the owner's `scrollportRef`, so the pane does not wrap it in a second scroller
 
 Files that are not `.txt` / `.text` keep their normal preview — Markdown, HTML, images, PDF, Excel and Office are untouched.
 
@@ -78,6 +80,12 @@ No `@deepseek-ai/*` packages are imported: the plugin talks to the harness only 
 
 ## Changelog
 
+Full, file-by-file notes: [CHANGELOG.md](CHANGELOG.md).
+
+- **2.2.1** — single scrollbar. The body reports the textarea through the owner's `scrollportRef` so the pane stops wrapping it in a second scroller, and clamps its own height to the space the pane actually offers; measurement scratch nodes moved into a zero-size clipping box.
+- **2.2.0** — line-number alignment. The mirror now copies the field's own typography (including `white-space`, `word-break`, `overflow-wrap`, `line-break`, `tab-size`) and is rejected when its total height disagrees with the field; an exact pass measures a same-class textarea clone line by line; the evenly-spaced guess fallback is gone, so an unmeasurable file shows no numbers rather than wrong ones.
+- **2.1.1** — activation hardening: the locale binding and dictionary effects moved inside their own guards, and the three Host routes mount through a `try` so a duplicate path cannot fail the host.
+- **2.1.0** — line-number gutter, one number per logical line, following scroll imperatively.
 - **2.0.1** — activation-order fix. The client module now declares `dsh.client.inject` on the document-preview package and never registers into a slot whose declaration is still being committed; every registration is exception-guarded so a hostile composition degrades to the read-only preview instead of aborting the web boot. No behaviour change otherwise.
 - **2.0.0** — editable `.txt` documents in the right sidebar (replaces the 1.x left-panel file browser); extension-band `documentPreviews` implementation, version-guarded saves, CRLF/BOM preservation.
 

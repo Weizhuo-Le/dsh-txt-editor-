@@ -1,6 +1,6 @@
 {
   "name": "dsh-txt-editor",
-  "version": "2.0.1",
+  "version": "2.2.1",
   "description": "Edit .txt files directly in the DSH right sidebar document tab.",
   "type": "module",
   "license": "MIT",
@@ -34,6 +34,7 @@
     "assets/*",
     "README.md",
     "README.zh.md",
+    "CHANGELOG.md",
     "USAGE.md",
     "LICENSE"
   ],
