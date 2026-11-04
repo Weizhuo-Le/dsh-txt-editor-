@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Right-sidebar Text Editor",
+    "description": "Edit .txt documents in the right sidebar tab itself: type, then Ctrl+S to write back to disk."
+  }
+}

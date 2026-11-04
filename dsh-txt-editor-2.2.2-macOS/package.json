@@ -1,0 +1,53 @@
+{
+  "name": "dsh-txt-editor",
+  "version": "2.2.2",
+  "description": "Edit .txt files directly in the DSH right sidebar document tab.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "editor",
+    "txt",
+    "right-sidebar"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/REPLACE_WITH_YOUR_USERNAME/dsh-txt-editor"
+  },
+  "homepage": "https://github.com/REPLACE_WITH_YOUR_USERNAME/dsh-txt-editor#readme",
+  "engines": {
+    "dsh": ">=0.2.1-rc.5"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "assets/*",
+    "README.md",
+    "README.zh.md",
+    "CHANGELOG.md",
+    "USAGE.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar-documentpreview"
+      ]
+    }
+  }
+}
