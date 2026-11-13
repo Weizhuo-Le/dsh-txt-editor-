@@ -1,7 +1,7 @@
 {
   "name": "dsh-txt-editor",
-  "version": "2.2.1",
-  "description": "Edit .txt files directly in the DSH right sidebar document tab.",
+  "version": "2.4.4",
+  "description": "Edit .txt files directly in the DSH right sidebar document tab, with per-paragraph line numbers.",
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -9,6 +9,7 @@
     "dsh-plugin",
     "editor",
     "txt",
+    "line-numbers",
     "right-sidebar"
   ],
   "repository": {
@@ -34,8 +35,8 @@
     "assets/*",
     "README.md",
     "README.zh.md",
-    "CHANGELOG.md",
     "USAGE.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "dsh": {

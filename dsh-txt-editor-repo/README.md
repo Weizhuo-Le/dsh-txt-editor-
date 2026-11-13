@@ -2,45 +2,51 @@
 
 English | [中文](README.zh.md)
 
-**Edit `.txt` files in place, inside the DSH right sidebar** — the document tab you already open becomes a textbox. Type, press `Ctrl+S`, and the file on disk is updated. No separate file browser, no leaving DSH.
+**Edit `.txt` in place inside the DSH right sidebar** — the document tab you already open becomes a text area, with **line numbers per paragraph** for proofreading. Type, press `Ctrl+S`, the file on disk is updated.
 
-Step-by-step manual (Chinese): **[USAGE.md](USAGE.md)** — interface, save semantics, the “file changed on disk” prompt, encoding and troubleshooting.
+Step-by-step manual (Chinese): [USAGE.md](USAGE.md).
 
 ## Install
 
 ```sh
-# from GitHub (source, no build step needed)
 dsh plugin --profile web add github:REPLACE_WITH_YOUR_USERNAME/dsh-txt-editor
 ```
 
 The desktop app can do the same from **Settings → Plugins** (add from GitHub). Refresh the page afterwards (`Ctrl+R` / `⌘R`).
 
-> npm publication is optional and not done yet; the plugin has no build step, so the GitHub source is the complete package.
+> No npm release; the plugin has no build step, so the GitHub source is the complete package.
 
-## Usage
+## What it does
 
-Open any `.txt` file the way you already do — a deliverable card, the right sidebar's file tree, or a file link in the conversation. Instead of the read-only preview you get an editor:
+- Opens `.txt` / `.text` in the document tab as an **editor** instead of a read-only preview.
+- **Line numbers in the left gutter**: one number per logical line (`\n`). A paragraph that wraps across several rows keeps a single number on its first row; blank lines keep their own number. Edits that change wrapping move the numbers with the text.
+- Character and line count, dirty indicator, last-saved time.
+- `Ctrl+S` / `⌘S` saves; the Save button is disabled when nothing changed.
+- **Reload** re-reads from disk, asking first when there are unsaved edits.
+- Honours the document toolbar's wrap toggle.
+- The toolbar's viewer dropdown lists it as **Editable text**, so the shipped read-only rendering stays one click away.
+- One scrollbar, not two.
 
-- character and line count, dirty indicator, last-saved time
-- **line-number gutter** on the left: one number per logical line (`\n`), so a wrapped paragraph keeps a single number at its first row; it follows scrolling and never re-lays out the text
-- `Ctrl+S` (or `⌘S`) saves; the Save button is disabled when nothing changed
-- **Reload** re-reads from disk, and asks first when there are unsaved edits
-- honours the document toolbar's wrap toggle
-- the toolbar's viewer dropdown lists it as **Editable text**, so the shipped read-only rendering is always one click away
-- one scrollbar only: the body reports the textarea through the owner's `scrollportRef`, so the pane does not wrap it in a second scroller
+Markdown, HTML, images, PDF, Excel and Office keep their normal previews.
 
-Files that are not `.txt` / `.text` keep their normal preview — Markdown, HTML, images, PDF, Excel and Office are untouched.
+## How the line numbers work
+
+No measurement, no offsets: a hidden "ghost" layer holds a copy of the text in the field's **own computed typography and padding**, and every visible number is placed inside that copy's row. The browser stacks those rows exactly as it stacks the field's lines, so a number cannot drift onto another row — and when an edit makes a line wrap, the number moves with it.
+
+Two details matter:
+
+1. The field reserves the **scrollbar width**, so the ghost adds it to its right padding. Without that the copy is ~15px wider, a line that wraps in the field stays on one row in the ghost, and every number below rides a row high.
+2. The numbers are anchored to the gutter's right edge (`margin-right`) rather than the text's, so they never sit on the divider line.
+
+Scrolling moves the ghost with the textarea by a single `transform` (no re-render, no re-layout).
 
 ## How it works
 
-The right column renders document tabs through DSH's `documentPreviews` registry, which selects an implementation by priority band and file suffix. The shipped plain-text implementation is `builtin` and matches no suffix in particular — it is the fallback for anything else.
+The right column renders document tabs through DSH's `documentPreviews` registry, which picks an implementation by priority band and file suffix. This plugin registers an `extension`-band implementation for `txt` / `text`; nothing is patched and no shipped implementation id is replaced.
 
-This plugin registers an `extension`-band implementation for `txt` / `text`, so those files are served by its own document body. Nothing is patched, and no shipped implementation id is replaced.
+`dsh.client.inject` orders this module after `@deepseek-ai/dsh-client-ui-sidebar-documentpreview`. That matters beyond tidiness: a slot entry registered before that package declares its slot runs inside *its* `register()` call, where a throw is reported as that package's activation failure — and one failed entry aborts the whole web boot. Every registration here is guarded, so the worst case is an absent editor, never a host that cannot start.
 
-`dsh.client.inject` orders this module after
-`@deepseek-ai/dsh-client-ui-sidebar-documentpreview`, which matters for more than tidiness: a slot entry registered before that package declares the slot runs inside *its* `register()` call, where a throw is reported as that package's activation failure — and one failed entry aborts the whole web boot. Every registration here is guarded, so the worst case is an absent editor, never a host that cannot start.
-
-The body only needs the document's absolute path, which it reads from the tab's resource metadata; text and saves go through the plugin's own Host routes:
+Text and saves go through the plugin's own Host routes:
 
 | Route | Purpose |
 | --- | --- |
@@ -50,44 +56,36 @@ The body only needs the document's absolute path, which it reads from the tab's 
 
 ## Safety
 
-- **Workspace-scoped.** Every path is resolved and checked with `fs.contains` against the workspaces DSH already registered; anything outside returns `403`. Writes carry an explicit `{ mode: 'workspace-write', workspaceRoot }` policy.
-- **No silent overwrite.** Reads return a file version and saves use `replaceIfVersion`. If the file changed on disk meanwhile — an agent wrote it, another editor saved it — the save returns `409` and the panel asks you to reload instead of clobbering it.
+- **Workspace-scoped.** Every path is resolved and checked with `fs.contains` against the workspaces DSH already registered; anything outside returns `403`, and writes pass `{ mode: 'workspace-write', workspaceRoot }`.
+- **No silent overwrite.** Reads return a file version and saves use `replaceIfVersion`; if the file changed meanwhile the save returns `409` and the panel asks you to reload.
 - **Format preserving.** CRLF/LF and a leading BOM are detected on read and restored on write.
-- **No cross-site writes.** Requests must carry the `x-novel-txt` header (a custom header cannot be sent cross-origin without a preflight this server never grants) and a same-origin `Origin`.
+- **No cross-site writes.** Requests must carry the `x-novel-txt` header and a same-origin `Origin`.
 
 ## Compatibility
 
-Requires a DSH Web or desktop host **0.2.1 or newer** — that line ships the right-sidebar document preview package whose `documentPreviews` registry this plugin extends. Declared as `engines.dsh` in `package.json`.
+Requires DSH Web or desktop **0.2.1 or newer** (the line that ships the right-sidebar document preview package). Declared as `engines.dsh`.
 
-No `@deepseek-ai/*` packages are imported: the plugin talks to the harness only through its documented client services (`ctx.slots`, `ctx.locale`, `ctx.get('documentPreviews')`) and Host services (`ctx.fs`, `ctx.webServer`). There are no dependencies, no install scripts and no native modules, so it installs and runs identically on Windows, macOS and Linux.
+No `@deepseek-ai/*` imports: the client half talks only to documented services (`ctx.slots`, `ctx.locale`, `ctx.get('documentPreviews')`), the Host half only to `ctx.fs` and `ctx.webServer`. No dependencies, no install scripts, no native modules; identical on Windows, macOS and Linux.
 
 ## Limitations
 
-- Only `.txt` (and `.text`) is taken over; `.md` keeps the Markdown preview.
-- Only files inside a registered workspace are editable.
-- No auto-save; the panel shows when there are unsaved edits.
-- The route namespace `/novel-txt/*` is global — do not install two copies of this plugin under different names.
-
-## Layout
-
-| File | Role |
-| --- | --- |
-| `index.js` | Host half: the three routes, workspace checks, version guard |
-| `client.js` | Client half: registers the editable `.txt` document implementation |
-| `cordis.patch.yml` | Inserts the `novel-txt-editor` row |
-| `locale/*.json` | Plugin manager title and description (zh / en) |
-| `icon.svg`, `assets/icon-180.png` | Plugin icon, storefront tile |
+- Only `.txt` (and `.text`); `.md` keeps the Markdown preview.
+- Only files inside a registered workspace are editable; UTF-8 only.
+- No auto-save, no undo history beyond the browser's own.
+- The route namespace `/novel-txt/*` is global — do not install two copies under different names.
 
 ## Changelog
 
-Full, file-by-file notes: [CHANGELOG.md](CHANGELOG.md).
+Full notes: [CHANGELOG.md](CHANGELOG.md).
 
-- **2.2.1** — single scrollbar. The body reports the textarea through the owner's `scrollportRef` so the pane stops wrapping it in a second scroller, and clamps its own height to the space the pane actually offers; measurement scratch nodes moved into a zero-size clipping box.
-- **2.2.0** — line-number alignment. The mirror now copies the field's own typography (including `white-space`, `word-break`, `overflow-wrap`, `line-break`, `tab-size`) and is rejected when its total height disagrees with the field; an exact pass measures a same-class textarea clone line by line; the evenly-spaced guess fallback is gone, so an unmeasurable file shows no numbers rather than wrong ones.
-- **2.1.1** — activation hardening: the locale binding and dictionary effects moved inside their own guards, and the three Host routes mount through a `try` so a duplicate path cannot fail the host.
-- **2.1.0** — line-number gutter, one number per logical line, following scroll imperatively.
-- **2.0.1** — activation-order fix. The client module now declares `dsh.client.inject` on the document-preview package and never registers into a slot whose declaration is still being committed; every registration is exception-guarded so a hostile composition degrades to the read-only preview instead of aborting the web boot. No behaviour change otherwise.
-- **2.0.0** — editable `.txt` documents in the right sidebar (replaces the 1.x left-panel file browser); extension-band `documentPreviews` implementation, version-guarded saves, CRLF/BOM preservation.
+- **2.4.4** — removed the dead measurement code from the previous line-number design (~15 KB of unreachable paths), so the gutter has a single implementation.
+- **2.4.3** — numbers can no longer break across two lines (fixed width + `white-space: pre`).
+- **2.4.2** — numbers anchored 7px left of the gutter divider instead of overlapping it.
+- **2.4.1** — the ghost layer accounts for the field's scrollbar width, so a wrapped line wraps in the ghost too.
+- **2.4.0** — line numbers rewritten as a flow layer (browser lays them out with the text; no measurement).
+- **2.1.1 / 2.2.x / 2.3.x** — activation hardening, alignment attempts on the old measurement design, typing-cost reduction.
+- **2.0.1** — activation-order fix: the module waits for the document-preview package and never registers into a slot that is still being committed; every registration is exception-guarded.
+- **2.0.0** — editable `.txt` in the right sidebar, version-guarded saves, CRLF/BOM preservation.
 
 ## License
 

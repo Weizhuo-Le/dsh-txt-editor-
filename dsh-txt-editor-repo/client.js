@@ -119,9 +119,20 @@ window.__ModuleLoader__.load({
       '.rte-body-inner{flex:1 1 auto;min-width:0;min-height:0;display:flex;position:relative;}',
       '.rte-gutter{flex:none;width:48px;position:relative;overflow:hidden;border-right:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-base);}',
       '.rte-gutterInner{position:absolute;left:0;top:0;right:0;will-change:transform;}',
-      '.rte-lineNo{position:absolute;left:0;right:7px;text-align:right;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:10.5px;color:var(--dsw-alias-label-secondary);opacity:.7;font-variant-numeric:tabular-nums;}',
-      '.rte-offscreen{position:absolute;left:0;top:0;width:0;height:0;overflow:hidden;pointer-events:none;}',
-      '.rte-mirror{position:absolute;left:0;top:0;visibility:hidden;pointer-events:none;font-family:inherit;font-size:14px;line-height:1.9;letter-spacing:normal;white-space:pre-wrap;overflow-wrap:break-word;tab-size:2;}',
+      /*
+       * The digits use the TEXT's own font-size and line-height, then scale down
+       * optically. That is what locks them to the text baseline: a smaller
+       * font-size in a tall line box is centered by the browser, which floats the
+       * number a few pixels above the glyphs it is supposed to label — numbers that
+       * sit on a row but read as if they belong to the row above.
+       */
+      '.rte-lineNo{position:absolute;left:0;right:7px;text-align:right;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:14px;line-height:1.9;color:var(--dsw-alias-label-secondary);opacity:.72;font-variant-numeric:tabular-nums;transform:scale(.78);transform-origin:right center;}',
+'.rte-ghost{position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none;overflow:visible;}',
+      '.rte-ghostInner{position:absolute;left:0;top:0;right:0;padding:12px 14px;will-change:transform;}',
+      '.rte-ghostRow{position:relative;white-space:pre-wrap;overflow-wrap:break-word;}',
+      '.rte-ghostText{visibility:hidden;}',
+      '.rte-ghostNo{position:absolute;right:100%;top:0;margin-right:21px;width:41px;text-align:right;white-space:pre;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--dsw-alias-label-secondary);opacity:.72;font-variant-numeric:tabular-nums;}',
+      '.rte-ghostNoText{display:inline-block;transform:scale(.78);transform-origin:right center;}',
       '.rte-text{flex:1 1 auto;min-width:0;min-height:0;width:100%;box-sizing:border-box;resize:none;border:0;background:transparent;color:inherit;font-family:inherit;font-size:14px;line-height:1.9;padding:12px 14px;overflow:auto;tab-size:2;}',
       '.rte-text:focus{outline:none;}',
       '.rte-text[data-wrap="true"]{white-space:pre-wrap;}',
@@ -132,6 +143,19 @@ window.__ModuleLoader__.load({
     /* ------------------------------------------------------------------ */
     /* Document body                                                      */
     /* ------------------------------------------------------------------ */
+
+    /*
+     * The gutter can hold one absolutely positioned number per line — a few
+     * hundred nodes in a chapter. Memoising it keeps every keystroke from
+     * re-diffing them: the parent re-renders on each character, but `tops` only
+     * changes when a measurement publishes.
+     */
+    const memo = typeof React.memo === 'function' ? React.memo : function (component) { return component; };
+
+    const EditorStyles = memo(function EditorStyles() {
+      return h('style', null, CSS);
+    });
+
 
     function TextEditorBody(props) {
       const T = makeT(props && props.t);
@@ -151,14 +175,12 @@ window.__ModuleLoader__.load({
       const [flash, setFlash] = useState('');
       const [reloadKey, setReloadKey] = useState(0);
       const [savedAt, setSavedAt] = useState('');
-      const [gutter, setGutter] = useState(null);
+      const [ghostRows, setGhostRows] = useState([]);
       const [widthTick, setWidthTick] = useState(0);
       const loadedFor = useRef('');
       const alive = useRef(true);
       const textRef = useRef(null);
-      const mirrorRef = useRef(null);
-      const offscreenRef = useRef(null);
-      const gutterInnerRef = useRef(null);
+      const ghostInnerRef = useRef(null);
 
       useEffect(function () {
         alive.current = true;
@@ -166,6 +188,93 @@ window.__ModuleLoader__.load({
           alive.current = false;
         };
       }, []);
+
+      /**
+       * The ghost layer holds a copy of the text so the browser can stack the
+       * numbers in the same flow: give it the field's own text styling, otherwise
+       * it would wrap at different places and the numbers would drift.
+       */
+      useEffect(
+        function () {
+          const area = textRef.current;
+          const ghost = ghostInnerRef.current;
+          if (!area || !ghost || typeof window.getComputedStyle !== 'function') return;
+          let computed;
+          try {
+            computed = window.getComputedStyle(area);
+          } catch (error) {
+            return;
+          }
+          const properties = [
+            'fontFamily',
+            'fontSize',
+            'fontWeight',
+            'fontStyle',
+            'fontVariant',
+            'fontStretch',
+            'letterSpacing',
+            'wordSpacing',
+            'textTransform',
+            'textIndent',
+            'fontFeatureSettings',
+            'fontKerning',
+            'textRendering',
+            'whiteSpace',
+            'wordBreak',
+            'overflowWrap',
+            'lineBreak',
+            'tabSize',
+            'textAlign',
+            'lineHeight',
+            'paddingTop',
+            'paddingRight',
+            'paddingBottom',
+            'paddingLeft',
+          ];
+          for (let i = 0; i < properties.length; i += 1) {
+            const value = computed[properties[i]];
+            if (value) ghost.style[properties[i]] = value;
+          }
+          /*
+           * The field reserves the vertical scrollbar's width; the ghost sits
+           * outside it. Without adding that width to the ghost's right padding the
+           * copy would be ~15px wider, so a line that wraps in the field would stay
+           * on one row here — and every number below it would ride one row high.
+           */
+          let scrollbar = 0;
+          try {
+            const borderX = (parseFloat(computed.borderLeftWidth) || 0) + (parseFloat(computed.borderRightWidth) || 0);
+            scrollbar = Math.max(0, area.offsetWidth - area.clientWidth - borderX);
+          } catch (error) {
+            scrollbar = 0;
+          }
+          const padRight = parseFloat(computed.paddingRight) || 0;
+          ghost.style.paddingRight = padRight + scrollbar + 'px';
+        },
+        [text === null, widthTick, ghostRows],
+      );
+
+      /** Rows for the ghost layer, refreshed shortly after typing stops. */
+      useEffect(
+        function () {
+          if (text === null) {
+            setGhostRows([]);
+            return undefined;
+          }
+          const derive = function () {
+            setGhostRows(String(text).replace(/\r\n?/g, '\n').split('\n'));
+          };
+          if (!ghostRows.length) {
+            derive();
+            return undefined;
+          }
+          const timer = setTimeout(derive, 120);
+          return function () {
+            clearTimeout(timer);
+          };
+        },
+        [text],
+      );
 
       useEffect(
         function () {
@@ -212,231 +321,6 @@ window.__ModuleLoader__.load({
           };
         },
         [flash],
-      );
-
-      /**
-       * Line numbers for proofreading.
-       *
-       * A wrapped textarea does not expose where a logical line starts, so a
-       * hidden mirror with the same typography and content width lays the same
-       * text out and reports each line's top offset. The gutter then paints one
-       * number per logical line at that offset, and follows the textarea's
-       * scroll imperatively (no re-render per scroll event).
-       */
-      useEffect(
-        function () {
-          if (text === null) return undefined;
-          let cancelled = false;
-          let timer = null;
-
-          function measure() {
-            if (cancelled) return;
-            const area = textRef.current;
-            const mirror = mirrorRef.current;
-            if (!area || !mirror || typeof document.createElement !== 'function') return;
-            // The panel can be measured before layout settles; try again shortly.
-            if (!area.clientWidth) {
-              timer = setTimeout(measure, 80);
-              return;
-            }
-            const rows = String(text).replace(/\r\n?/g, '\n').split('\n');
-            let lineHeight = 26.6;
-            let paddingTop = 0;
-            let measured = null;
-            try {
-              const style = typeof window.getComputedStyle === 'function' ? window.getComputedStyle(area) : null;
-              if (style) {
-                const parsed = parseFloat(style.lineHeight);
-                if (isFinite(parsed) && parsed > 0) lineHeight = parsed;
-                /*
-                 * Copy the textarea's own typography instead of trusting the
-                 * stylesheet: a host theme may set letter-spacing, word-spacing,
-                 * font-weight or text-rendering on form fields, and any of those
-                 * changes where CJK text wraps — which is exactly what puts the
-                 * numbers out of step with the lines.
-                 */
-                const inherited = [
-                  'fontFamily',
-                  'fontSize',
-                  'fontWeight',
-                  'fontStyle',
-                  'fontVariant',
-                  'fontStretch',
-                  'letterSpacing',
-                  'wordSpacing',
-                  'textTransform',
-                  'textIndent',
-                  'fontFeatureSettings',
-                  'fontKerning',
-                  'textRendering',
-                  // Wrapping is the part that actually moves the numbers: with the
-                  // document's wrap toggle off the field renders one row per line,
-                  // so a pre-wrap mirror would place every number far too low.
-                  'whiteSpace',
-                  'wordBreak',
-                  'overflowWrap',
-                  'lineBreak',
-                  'tabSize',
-                  'textAlign',
-                ];
-                for (let i = 0; i < inherited.length; i += 1) {
-                  const value = style[inherited[i]];
-                  if (value) mirror.style[inherited[i]] = value;
-                }
-                mirror.style.lineHeight = lineHeight + 'px';
-              }
-              const paddingLeft = style ? parseFloat(style.paddingLeft) || 0 : 0;
-              const paddingRight = style ? parseFloat(style.paddingRight) || 0 : 0;
-              paddingTop = style ? parseFloat(style.paddingTop) || 0 : 0;
-              mirror.style.width = Math.max(40, area.clientWidth - paddingLeft - paddingRight) + 'px';
-              while (mirror.firstChild) mirror.removeChild(mirror.firstChild);
-              const fragment = document.createDocumentFragment();
-              for (let i = 0; i < rows.length; i += 1) {
-                const row = document.createElement('div');
-                row.textContent = rows[i] === '' ? '\u00a0' : rows[i];
-                // an empty line must still reserve one row, or the numbers drift by a line
-                row.style.minHeight = lineHeight + 'px';
-                fragment.appendChild(row);
-              }
-              mirror.appendChild(fragment);
-              /*
-               * Sanity check before publishing: if the mirror's total height is
-               * not the field's, the two broke lines differently and every offset
-               * below the first difference is wrong. Stay quiet then — the exact
-               * pass below publishes a trustworthy set a moment later.
-               */
-              const paddingBottom = style ? parseFloat(style.paddingBottom) || 0 : 0;
-              const fieldHeight = area.scrollHeight - paddingTop - paddingBottom;
-              if (Math.abs(mirror.scrollHeight - fieldHeight) > 2) {
-                // Broken differently: publish nothing rather than wrong offsets.
-                // The exact pass below fills the gutter in a moment.
-                return;
-              }
-              const tops = [];
-              for (let i = 0; i < mirror.children.length; i += 1) tops.push(mirror.children[i].offsetTop + paddingTop);
-              measured = tops;
-            } catch (error) {
-              measured = null;
-            }
-            /*
-             * No fallback on purpose. An evenly spaced guess is exactly the bug
-             * people report — every number sits on some row, just not on ITS row —
-             * while the exact pass publishes the real offsets a moment later.
-             * An empty gutter for 100ms beats wrong numbers for the session.
-             */
-            if (!measured) return;
-            setGutter({ tops: measured, lineHeight });
-          }
-
-          // Measure now (the DOM is committed), once more after the first frame
-          // in case the panel is still settling, and again when webfonts land.
-          measure();
-          const raf = typeof window.requestAnimationFrame === 'function' ? window.requestAnimationFrame(measure) : null;
-          timer = setTimeout(measure, 120);
-          if (document.fonts && document.fonts.ready && typeof document.fonts.ready.then === 'function') {
-            document.fonts.ready.then(function () {
-              if (!cancelled) measure();
-            }).catch(function () {});
-          }
-          return function () {
-            cancelled = true;
-            if (timer) clearTimeout(timer);
-            if (raf != null && typeof window.cancelAnimationFrame === 'function') window.cancelAnimationFrame(raf);
-          };
-        },
-        [text, widthTick],
-      );
-
-      /**
-       * Exact pass.
-       *
-       * The mirror above is only an approximation: it is a <div> while the real
-       * field is a <textarea>, and any difference in how the two break lines —
-       * a host stylesheet on form fields, a fractional panel width, scrollbar
-       * handling, font metrics — shifts every number below the first difference.
-       * That is what "numbers do not line up" looks like: each number still sits
-       * on a row, just not on ITS row.
-       *
-       * This pass measures the textarea itself: a hidden clone carrying the same
-       * class, so the browser lays text out for it exactly as for the editor, is
-       * grown one line at a time and asked for its scrollHeight. Offsets are then
-       * exact by construction. It is chunked so a long file never freezes typing;
-       * the mirror numbers stay on screen until it finishes.
-       */
-      useEffect(
-        function () {
-          if (text === null) return undefined;
-          const area = textRef.current;
-          const host = offscreenRef.current || (mirrorRef.current ? mirrorRef.current.parentNode : null);
-          if (!area || !host || typeof document.createElement !== 'function') return undefined;
-          const width = area.clientWidth;
-          if (!width) return undefined;
-          const rows = String(text).replace(/\r\n?/g, '\n').split('\n');
-          // The clone costs one layout per line. Past this size the mirror result
-          // is what the panel shows, rather than blocking the UI for seconds.
-          if (rows.length > 1500) return undefined;
-          const style = typeof window.getComputedStyle === 'function' ? window.getComputedStyle(area) : null;
-          const paddingTop = style ? parseFloat(style.paddingTop) || 0 : 0;
-          const paddingBottom = style ? parseFloat(style.paddingBottom) || 0 : 0;
-          let lineHeight = style ? parseFloat(style.lineHeight) : 26.6;
-          if (!isFinite(lineHeight) || lineHeight <= 0) lineHeight = 26.6;
-
-          let cancelled = false;
-          let probe = null;
-          let timer = null;
-          const tops = [paddingTop];
-          let index = 1;
-          let accumulated = rows[0] == null ? '' : rows[0];
-
-          function ensureProbe() {
-            if (probe) return probe;
-            const el = document.createElement('textarea');
-            el.className = 'rte-text';
-            el.setAttribute('aria-hidden', 'true');
-            el.setAttribute('tabindex', '-1');
-            el.style.position = 'absolute';
-            el.style.left = '0';
-            el.style.top = '0';
-            el.style.visibility = 'hidden';
-            el.style.pointerEvents = 'none';
-            el.style.overflow = 'hidden';
-            el.style.height = '0';
-            el.style.minHeight = '0';
-            el.style.width = width + 'px';
-            host.appendChild(el);
-            probe = el;
-            return el;
-          }
-
-          function pump() {
-            if (cancelled) return;
-            try {
-              const el = ensureProbe();
-              for (let n = 0; n < 120 && index < rows.length; n += 1) {
-                accumulated += '\n' + rows[index];
-                el.value = accumulated;
-                tops.push(el.scrollHeight - paddingTop - paddingBottom);
-                index += 1;
-              }
-              if (index >= rows.length) {
-                if (!cancelled) setGutter({ tops, lineHeight });
-                return;
-              }
-            } catch (error) {
-              return;
-            }
-            timer = setTimeout(pump, 0);
-          }
-
-          timer = setTimeout(pump, 0);
-          return function () {
-            cancelled = true;
-            if (timer) clearTimeout(timer);
-            if (probe && probe.parentNode) probe.parentNode.removeChild(probe);
-            probe = null;
-          };
-        },
-        [text, widthTick],
       );
 
       /**
@@ -517,7 +401,7 @@ window.__ModuleLoader__.load({
       );
 
       function onScroll(event) {
-        const inner = gutterInnerRef.current;
+        const inner = ghostInnerRef.current;
         if (!inner || !event || !event.currentTarget) return;
         inner.style.transform = 'translateY(' + -event.currentTarget.scrollTop + 'px)';
       }
@@ -579,7 +463,7 @@ window.__ModuleLoader__.load({
         return h(
           'div',
           { className: 'rte-root' },
-          h('style', null, CSS),
+          h(EditorStyles, null),
           h('p', { className: 'rte-empty' }, T('panel.unavailable')),
         );
       }
@@ -587,7 +471,7 @@ window.__ModuleLoader__.load({
       return h(
         'div',
         { className: 'rte-root' },
-        h('style', null, CSS),
+        h(EditorStyles, null),
         h(
           'div',
           { className: 'rte-bar' },
@@ -621,39 +505,32 @@ window.__ModuleLoader__.load({
           : h(
               'div',
               { className: 'rte-body' },
-              h(
-                'div',
-                { className: 'rte-gutter', 'aria-hidden': 'true' },
-                h(
-                  'div',
-                  { className: 'rte-gutterInner', ref: gutterInnerRef },
-                  (gutter ? gutter.tops : []).map(function (top, index) {
-                    return h(
-                      'div',
-                      {
-                        className: 'rte-lineNo',
-                        key: index,
-                        style: { top: top + 'px', height: gutter.lineHeight + 'px', lineHeight: gutter.lineHeight + 'px' },
-                      },
-                      String(index + 1),
-                    );
-                  }),
-                ),
-              ),
+              h('div', { className: 'rte-gutter', 'aria-hidden': 'true' }),
               h(
                 'div',
                 { className: 'rte-body-inner' },
                 /*
-                 * Measurement scratch space. Both the mirror and the exact-pass
-                 * clone are laid out off to the side, and a wide node parked at a
-                 * negative offset can extend an ancestor's scrollable area — that
-                 * is where an unexpected second scrollbar comes from. A zero-size
-                 * clipping wrapper keeps them out of every scroll container.
+                 * The numbers are painted by a ghost layer that holds a copy of the
+                 * text in the field's own typography: the browser lays those rows
+                 * out exactly as it lays out the field's lines, so a number sits on
+                 * its own row by construction. No measuring, no offsets to drift —
+                 * editing long enough to wrap a line pushes the numbers down with it.
                  */
                 h(
                   'div',
-                  { className: 'rte-offscreen', ref: offscreenRef, 'aria-hidden': 'true' },
-                  h('div', { className: 'rte-mirror', ref: mirrorRef }),
+                  { className: 'rte-ghost', 'aria-hidden': 'true' },
+                  h(
+                    'div',
+                    { className: 'rte-ghostInner', ref: ghostInnerRef },
+                    ghostRows.map(function (line, index) {
+                      return h(
+                        'div',
+                        { className: 'rte-ghostRow', key: index },
+                        h('span', { className: 'rte-ghostNo' }, h('span', { className: 'rte-ghostNoText' }, String(index + 1))),
+                        h('span', { className: 'rte-ghostText' }, line === '' ? '\u00a0' : line),
+                      );
+                    }),
+                  ),
                 ),
                 h('textarea', {
                   className: 'rte-text',
